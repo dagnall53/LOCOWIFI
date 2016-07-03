@@ -30,9 +30,9 @@ for (int i=1; i<=10; i++) {
 
 //cv'S ARE IN 256 ONWARDS.
 
-CV[18] = 0x0E;
+CV[18] = 0x06;
 CV[17] = 0x01;
-CV[1]= 0x0E; 
+CV[1]= 0x06; 
 CV[29]= 0x20;  // N0rmal and extended addressing..  0x21 for reversed
 
 CV[8]= 0x0D; // DIY code

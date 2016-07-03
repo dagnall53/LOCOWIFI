@@ -41,14 +41,27 @@ void MoveSlots ( uint8_t *recMsg)   {
 
 
     #if _SERIAL_DEBUG
-          Serial.print(F("Slot change :"));
+          Serial.print(F("Slot change request :"));
          Serial.print(DEST);
           Serial.print(F(" to DEST :"));
          Serial.println( recMsg[2]);     
      #endif 
-  DEST= recMsg[2];
-}
+  DEST= CV[18];  /// should be recMsg[2]; ///FORCE KEEP DEST = CV18 ?
 
+   if (recMsg[2]==CV[18]) { //only reply if we are target, else it could be another loco...
+           setOPC_SL_RD_DATA_Msg (sendMessage, CV[18],  0x05, CV[18], Motor_Speed,  DIRF, 0x00,  0x00, CV[17],  SND,  0x01,  0x00)  ;          
+              UDP.beginPacket(ipBroad, port);
+              UDP.write(sendMessage, 14);
+              UDP.endPacket();
+   }                  
+
+
+
+
+
+  
+
+}
 
 
 void motorcommands (uint8_t *RECMsg,uint8_t Len) {
@@ -84,14 +97,7 @@ DIRF  loco direction and functions(4) 0,0,DIR,F0,F4,F3,F2,F1
             // ********** Look for messages in my range 
                     digitalWrite (BlueLed, LOW) ;  /// turn On 
                     MoveSlots(RECMsg);  // deals with message, updates DEST
-    #if _SERIAL_DEBUG
-          Serial.print(F("move slots "));
-     #endif   
-           setOPC_SL_RD_DATA_Msg (sendMessage, DEST,  0x05, CV[18], Motor_Speed,  DIRF, 0x00,  0x00, CV[17],  SND,  0x01,  0x00)  ;          
-              UDP.beginPacket(ipBroad, port);
-              UDP.write(sendMessage, 14);
-              UDP.endPacket();
-                                       
+                                        
                                         }  ////****** end of if (CommandOpCode  = OPC_MOVE_SLOTSQ)
 
    if (RECMsg[0] == OPC_LOCO_SPD){  //loco speed.. ++++++++++++++++++++++++++++++++++++
@@ -115,7 +121,8 @@ DIRF  loco direction and functions(4) 0,0,DIR,F0,F4,F3,F2,F1
  if (RECMsg[0] == OPC_LOCO_DIRF){  //loco DIRF.. ++++++++++++++++++++++++++++++++++++
             // ********** Look for messages in my range 
                     digitalWrite (BlueLed, LOW) ;  /// turn On 
-                   if (RECMsg[1]==DEST){ DIRF= RECMsg[2]; 
+                   if (RECMsg[1]==DEST){ 
+                    DIRF=RECMsg[2]; 
 
                      if (bitRead(DIRF, 5 )) {
                        Motor_Servo= Motor_Speed +90; }
