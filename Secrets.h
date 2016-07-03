@@ -1,4 +1,4 @@
-#define SSID_RR "virginmedia7636644"
-#define PASS_RR "msxkhxwa"
+#define SSID_RR "ssid"
+#define PASS_RR "pass"
 
 
