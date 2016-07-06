@@ -54,7 +54,7 @@ uint16_t AddrFull (uint8_t HI, uint8_t LO) {
 
 uint16_t CommandFor (uint8_t *RECMsg, uint8_t len) {
    uint16_t Address;
-   Address= 0;
+   Address= 255;
    if(RECMsg[0] == OPC_SW_REQ){ Address= ((128*(RECMsg[2]&0x0F)+RECMsg[1])+1); }
     if(RECMsg[0] == OPC_PEER_XFER){ Address= ((128*(RECMsg[11]&0x0F)+RECMsg[3])); }
     if(RECMsg[0] == OPC_LOCO_ADR){ Address= ( RECMsg[2]); }
@@ -62,7 +62,7 @@ uint16_t CommandFor (uint8_t *RECMsg, uint8_t len) {
     if(RECMsg[0] == OPC_LOCO_DIRF){ Address= ( RECMsg[1]); }
     if(RECMsg[0] == OPC_LOCO_SPD){ Address= ( RECMsg[1]); }
     if(RECMsg[0] == OPC_RQ_SL_DATA){ Address= ( RECMsg[1]); }
-    
+     if(RECMsg[0] == OPC_WR_SL_DATA){ Address= ( RECMsg[6]); }
     
     
  return (Address);
@@ -376,6 +376,90 @@ if (SloopDelay >=90){  // only send debug if updating slowly...
  }
   }
   
+void BuildMessage(uint8_t *SendMsg,uint8_t Command, uint8_t SRC, uint8_t DSTL,uint8_t DSTH,uint8_t D1, uint8_t D2, uint8_t D3, uint8_t D4, uint8_t D5, uint8_t D6, uint8_t D7, uint8_t D8)
+{
+  int k;
+  uint8_t PXCT1;
+  uint8_t PXCT2;
 
+ SendMsg[0]= Command ;
+ SendMsg[1]=  0x10;     //  Message length
+ SendMsg[2]=  SRC;    // Arg1
+ SendMsg[3]=  DSTL;     // Arg2
+ SendMsg[4]=  DSTH;     // arg3
+                         // arg4 = PXCT1
+ SendMsg[6]=  (D1 & 0x7F);    // Arg 5
+ SendMsg[7]=  (D2 & 0x7F);      // Arg 6
+ SendMsg[8]= (D3 & 0x7F) ;    ////  Arg 7
+ SendMsg[9]=  (D4 & 0x7F);     // Arg 8
+                              //Arg 9
+ SendMsg[11]=  (D5 & 0x7F);     //Arg10
+ SendMsg[12]=  (D6 & 0x7F);   //Arg 11
+ SendMsg[13]=  (D7 & 0x7F);  //Arg 12
+ SendMsg[14]=  (D8 & 0x7F);  // Arg 13
+ 
+ PXCT1 = 0;
+   //PXCT1 = x x x x ...then MSB of .. [9] [8] [7] [6]
+    //PXCT2 = x x x x ...then MSB of .. [14] [13] [12] [11]
+ bitWrite (PXCT1, 0, bitRead(D1,7));
+ bitWrite (PXCT1, 1, bitRead(D2,7));
+ bitWrite (PXCT1, 2, bitRead(D3,7));
+ bitWrite (PXCT1, 3, bitRead(D4,7));
+ SendMsg[5]=  PXCT1;     //// PXCT1 high order bits 
+ 
+ PXCT2 = 0;
+ bitWrite (PXCT2, 0, bitRead(D5,7));
+ bitWrite (PXCT2, 1, bitRead(D6,7));
+ bitWrite (PXCT2, 2, bitRead(D7,7));
+ bitWrite (PXCT2, 3, bitRead(D8,7));
+   SendMsg[10]=  PXCT2;    // // High order bit of requested dataMSB requested data 
+
+  SendMsg[15]=0xFF;  //checksum
+        for(k=0; k<15;k++){                                   //Make checksum for this three byte message
+        SendMsg[15] ^= SendMsg[k]; 
+}
+}
+
+void BuildUE5Message(uint8_t *SendMsg, uint8_t SRC, uint8_t DSTL,uint8_t DSTH,uint16_t CLASS, uint16_t LNCV, uint16_t LNCVAL, uint8_t FLAGS)
+{
+  uint8_t PXCT1;
+Serial.println("in BuildEU5 message");
+
+ SendMsg[0]= 0xE5 ;  // Uhlengbock E5 message, see https://groups.yahoo.com/neo/groups/loconet_hackers/conversations/messages/9288
+                        //Opcode  OPC_PEER_XFER (0E5h) - for replies (or 'spontaneous messages')
+                        //OPC_IMM_PACKET (0EDh) - for messages which expect a reply
+ SendMsg[1]=  0x0F;     //  Message length
+ SendMsg[2]=  SRC;      // Arg1
+ SendMsg[3]=  DSTL;     // Arg2
+ SendMsg[4]=  DSTH;     // arg3
+ SendMsg[5]=  0x21;    // CMD  ==readLNCV                        
+
+ SendMsg[7]=  ((CLASS&0xFF00)/256);      // D1
+ SendMsg[8]=  (CLASS&0xFF) ;          // D2
+ SendMsg[9]=  ((LNCV&0xFF00)/256);     // D3
+ SendMsg[10]=  (LNCV&0xFF);        //D4
+ SendMsg[11]=  ((LNCVAL&0xFF00)/256);   //D5
+ SendMsg[12]=  (LNCVAL&0xFF);  //D6
+ SendMsg[13]=  (FLAGS);  // D7
+ 
+ PXCT1 = 0;// PXCT1   0, D7.7, D6.7, D5.7, D4.7, D3.7, D2.7, D1.7
+ bitWrite (PXCT1, 0, bitRead(SendMsg[7],7));
+ bitWrite (PXCT1, 1, bitRead(SendMsg[8],7));
+ bitWrite (PXCT1, 2, bitRead(SendMsg[9],7));
+ bitWrite (PXCT1, 3, bitRead(SendMsg[10],7));
+ bitWrite (PXCT1, 4, bitRead(SendMsg[11],7));
+ bitWrite (PXCT1, 5, bitRead(SendMsg[12],7));
+ bitWrite (PXCT1, 6, bitRead(SendMsg[13],7));
+ SendMsg[6]=  PXCT1;    // PXCT1   0, D7.7, D6.7, D5.7, D4.7, D3.7, D2.7, D1.7
+   // // remove the High order bit of requested dataMSB requested data 
+   Serial.println("in BuildEU5 message  decapitating data");
+   for (int i=7;i<=13;i++){
+    SendMsg[i]= SendMsg[i]&0x7F;
+   }
+  SendMsg[14]=0xFF;  //checksum
+        for(int k=0; k<14;k++){                                   //Make checksum for this  message
+        SendMsg[14] ^= SendMsg[k]; 
+}
+}
 
 

@@ -56,7 +56,7 @@ uint8_t Motor_Servo =0 ;
 
 uint8_t DIRF =0 ;
 uint8_t SND =0 ;
-uint8_t DEST ;
+uint16_t MyLocoAddr ;
 
 
 
