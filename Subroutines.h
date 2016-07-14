@@ -7,6 +7,15 @@ void dump_byte_array(byte *buffer, byte bufferSize) {
        Serial.print(buffer[i], HEX);
     }
 }
+void dump_byte(uint8_t buffer) {
+ 
+       Serial.print(buffer < 0x10 ? " 0" : " ");
+       Serial.print(buffer, HEX);
+       Serial.print("H ");
+
+}
+
+
 uint8_t lnCalcCheckSumm(uint8_t *cMessage, uint8_t cMesLen) {
     unsigned char ucIdx = 0;
     char cLnCheckSum = 0;
@@ -20,25 +29,34 @@ uint8_t lnCalcCheckSumm(uint8_t *cMessage, uint8_t cMesLen) {
 }
 
 
-void setOPCMsg (uint8_t *SendMsg, int i, uint16_t addr, int InputState )  
+void setOPCMsg (uint8_t *SendMsg,uint16_t addr, int InputState )  
 {
   unsigned char k = 0;
   uint16_t tempaddr; 
-   SendMsg[0] = OPC_INPUT_REP; //OPC_INPUT_REP 
-        tempaddr = addr;
-        SendMsg[1] = tempaddr & 0xFE;
-      SendMsg[1] = SendMsg[1] >> 1;
+   SendMsg[0] = OPC_INPUT_REP; //OPC_INPUT_REP         
         bitClear (SendMsg[1],7);
-        bitSet (SendMsg[2],6);  //X=1
+        bitWrite (SendMsg[1],6, bitRead(addr,7));
+        bitWrite (SendMsg[1],5, bitRead(addr,6));
+        bitWrite (SendMsg[1],4, bitRead(addr,5));
+        bitWrite (SendMsg[1],3, bitRead(addr,4));
+        bitWrite (SendMsg[1],2, bitRead(addr,3));
+        bitWrite (SendMsg[1],1, bitRead(addr,2));
+        bitWrite (SendMsg[1],0, bitRead(addr,1));
+
+        bitClear (SendMsg[2],7);
+        bitSet   (SendMsg[2],6);  //X=1
         bitWrite (SendMsg[2],5, bitRead(addr,0));
-        bitWrite (SendMsg[2],4, !InputState);
-        bitWrite (SendMsg[2],0, bitRead(addr,7));
-        bitWrite (SendMsg[2],1, bitRead(addr,8));
-        bitWrite (SendMsg[2],2, bitRead(addr,9));
-        bitWrite (SendMsg[2],3, bitRead(addr,10));
+        bitWrite (SendMsg[2],4, !InputState);   
+        bitWrite (SendMsg[2],3, bitRead(addr,11));  
+        bitWrite (SendMsg[2],2, bitRead(addr,10)); 
+        bitWrite (SendMsg[2],1, bitRead(addr,9));
+        bitWrite (SendMsg[2],0, bitRead(addr,8));
+       
+      
+     
           
         SendMsg[3]=0xFF;
-        for(k=0; k<3;k++){                                   //Make checksum for this three byte message
+        for(k=0; k<3;k++){                                   //Make checksum for this 4 byte message
         SendMsg[3] ^= SendMsg[k];
                          }
 }
@@ -52,7 +70,7 @@ uint16_t AddrFull (uint8_t HI, uint8_t LO) {
 
 
 
-uint16_t CommandFor (uint8_t *RECMsg, uint8_t len) {
+uint16_t CommandFor (uint8_t *RECMsg) {
    uint16_t Address;
    Address= 255;
    if(RECMsg[0] == OPC_SW_REQ){ Address= ((128*(RECMsg[2]&0x0F)+RECMsg[1])+1); }
@@ -62,7 +80,7 @@ uint16_t CommandFor (uint8_t *RECMsg, uint8_t len) {
     if(RECMsg[0] == OPC_LOCO_DIRF){ Address= ( RECMsg[1]); }
     if(RECMsg[0] == OPC_LOCO_SPD){ Address= ( RECMsg[1]); }
     if(RECMsg[0] == OPC_RQ_SL_DATA){ Address= ( RECMsg[1]); }
-     if(RECMsg[0] == OPC_WR_SL_DATA){ Address= ( RECMsg[6]); }
+     if(RECMsg[0] == OPC_WR_SL_DATA){ Address= ( RECMsg[6]+(128*RECMsg[5])); }
     
     
  return (Address);
@@ -82,15 +100,19 @@ uint8_t CommandOpCode (uint8_t *RECMsg, uint8_t len) {
 }
 
 
-void SetServo (int i, int pos){
+void SetServo (int i, int pos){  // expects i = 1 to 8   maps back to "D1- D8" 
+
+ if (((SV[3*i]& 0x38) ==0x18) ||(i==8)){  // only if this port is a servo...(case 8 has its own check  
+
 #if _SERIAL_SUBS_DEBUG
-         Serial.print(F("Servo on D"));
-         Serial.print(i-1);   // if you change ports set this correctly!...
-         Serial.print(" requests state:");
-         Serial.print(pos);
-         Serial.print(" will be set to position :");
-     #endif  
-switch (pos){
+         Serial.print("Servo on address set at Port:");
+         Serial.print(i);
+         Serial.print(" using speed SV[");
+         Serial.print(100+(3*i));
+         Serial.print("] ");  
+         Serial.print(" outputs to ");
+      #endif  
+switch (pos){  // evaluate request  
   case 0:            //never seen this case, but It may be possible? 
    SDemand[i]= (SV[98+(3*i)]+SV[99+(3*i)])/2;
     break;
@@ -102,54 +124,99 @@ switch (pos){
     break;
   case 3:
  SDemand[i]= SV[99+(3*i)]; //servoStraight[i];
-  break; 
+    break; 
+  case 254:
+  SDemand[i]= Motor_Servo/2; // special case for loco!
+    break;
   }
-#if _SERIAL_SUBS_DEBUG
-         Serial.print(SDemand[i]);
-          Serial.print(" at speed '"); 
-           Serial.print(SV[100+(3*i)]);
-         Serial.println("'  {NOTE: 2 deg steps, so Range[1..90] = 2 to 180 degrees}");
-         #endif  
-SDemand[i]=SDemand[i]*2; // Range variable are 1-127 so double them to give sensible range for servo
+
+  SDemand[i]=SDemand[i]*2; // Range variable are 1-127 so double them to give sensible range for servo
 if (SDemand[i]>=180) {SDemand[i]=180;}  //limit at 180 degrees
    SDelay[i]=1000;          // set so next doPeriodicservo will do its stuff stuff now
-   ServoOffDelay[i]=0; 
-   switch  (i){  // we sort out which servo to operate here.. case 1= the Base Address
-// re attach servos in case they have been switched off
-  case 1:
-    if (!myservo0.attached()) {myservo0.attach(D0);}
-   break;
-  case 2:
-    if (!myservo1.attached()) {myservo1.attach(D0);}  /// fiddled to avoid loco deiver for this testt
-  break;
-  case 3:
-     if (!myservo2.attached()) {myservo2.attach(D2);}
-  break;
-    case 4:
-    if (!myservo3.attached()) {myservo3.attach(D3);}
-  break;
-        }
-if (SV[100+(3*i)]==5) {  // if 5 instant..elsewill be slowly run in doperiodicservo
+   ServoOffDelay[i]=0;   //SET THE DELAY COUNTER FOR THIS SERVO
+
 switch  (i){  // we sort out which servo to do immediately now .. case 1= the Base Address
-  case 1:
-    myservo0.write(SDemand[i]);
+  case 0:
+   if (!myservo0.attached()) {myservo0.attach(D0); }// re attach servos in case they have been switched off
+   // if (SV[100+(3*i)]==0) {myservo0.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+    #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D0 ");
+               #endif 
    break;
+  case 1:
+   if (!myservo1.attached()) {myservo1.attach(D1); }// re attach servos in case they have been switched off
+   // if (SV[100+(3*i)]==0) {myservo1.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+     #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D1 ");
+               #endif 
+             
+  break;
   case 2:
-    myservo1.write(SDemand[i]);
-  break;
-  case 3:
-    myservo2.write(SDemand[i]);
-  break;
-    case 4:
-    myservo3.write(SDemand[i]);
-  break;
-        }
-}//IF sv=1
-/////SDemand (i) is now set, leav it to do Periodic Servo...
 
+   if (!myservo2.attached()) {myservo2.attach(D2); }// re attach servos in case they have been switched off
+ //   if (SV[100+(3*i)]==0) {myservo2.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+    #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D2 ");
+               #endif 
+          
+  break;
+    case 3:
+   if (!myservo3.attached()) {myservo3.attach(D3); }// re attach servos in case they have been switched off
+ //   if (SV[100+(3*i)]==0) {myservo3.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+    #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D3 ");
+               #endif 
+  break;
+  case 4:
+   if (!myservo4.attached()) {myservo4.attach(D4); }// re attach servos in case they have been switched off
+ //   if (SV[100+(3*i)]==0) {myservo4.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+    #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D4 ");
+               #endif 
+  break;
+    case 5:
+if (!myservo5.attached()) {myservo5.attach(D5); }// re attach servos in case they have been switched off
+ //   if (SV[100+(3*i)]==0) {myservo1.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+    #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D5 ");
+               #endif 
+             
+  break;
+    case 6:
+ if (!myservo6.attached()) {myservo6.attach(D6); }// re attach servos in case they have been switched off
+ //   if (SV[100+(3*i)]==0) {myservo6.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+    #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D6 ");
+               #endif 
+             
+  break;
+    case 7:
+   if (!myservo7.attached()) {myservo7.attach(D7); }// re attach servos in case they have been switched off
+ //   if (SV[100+(3*i)]==0) {myservo7.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+    #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D7 ");
+               #endif 
+  break;    
+  case 8:
+   if (!myservo8.attached()) {myservo8.attach(D8); }// re attach servos in case they have been switched off
+ //   if (SV[100+(3*i)]==0) {myservo8.write(SDemand[i]);} // if 1 instant..elsewill be slowly run in doperiodicservo
+    #if _SERIAL_SUBS_DEBUG
+         Serial.print(" D8 ");
+               #endif 
+  break;
+     }   
+/////SDemand (i) is now set, leave it to doPeriodic Servo...
+     #if _SERIAL_SUBS_DEBUG
+         Serial.print(" requests state:");
+         Serial.print(pos);
+         Serial.print(" to be set to position :");
+         Serial.print(SDemand[i]);
+         Serial.print(" at speed '"); 
+         Serial.println (SV[100+(3*i)]);
+      #endif  
 
-
-  }
+} // only if this port is a servo
+  }  // set servo
 
 
 
@@ -185,15 +252,31 @@ uint8_t Debounce (int i) {  // Tests for inputs having changed, returns value of
 uint8_t OPCPeerRX(uint8_t *RECMsg){
  uint8_t PXCT1;
   uint8_t PXCT2;
+
 PXCT1= RECMsg[5];
 PXCT2= RECMsg[10];
+OPC_Data[1]=RECMsg[6]+128*bitRead(PXCT1,0);
+OPC_Data[2]=RECMsg[7]+128*bitRead(PXCT1,1);
+OPC_Data[3]=RECMsg[8]+128*bitRead(PXCT1,2);
+OPC_Data[4]=RECMsg[9]+128*bitRead(PXCT1,3);
+OPC_Data[5]=RECMsg[11]+128*bitRead(PXCT1,0);
+OPC_Data[6]=RECMsg[12]+128*bitRead(PXCT1,1);
+OPC_Data[7]=RECMsg[13]+128*bitRead(PXCT1,2);
+OPC_Data[8]=RECMsg[14]+128*bitRead(PXCT1,3);
+//for (int i=1;i<9;i++){
+ // Serial.print("OPC_Data ");
+ // Serial.print(i);
+ // Serial.print("  =");
+//  dump_byte(OPC_Data[i]);
+//}
+//Serial.println(" ");
   //PXCT1 = x x x x ...then MSB of .. [9] [8] [7] [6]
     //PXCT2 = x x x x ...then MSB of .. [14] [13] [12] [11]
 OPCSRCL = RECMsg[3];
-OPCRXTX= RECMsg[6]+128*bitRead(PXCT1,0);
-OPCSV= RECMsg[7]+128*bitRead(PXCT1,1);
-OPCdata = RECMsg[9]+128*bitRead(PXCT1,3);
-OPCSub =RECMsg[11]+128*bitRead(PXCT2,3);
+OPCRXTX= OPC_Data[1];
+OPCSV= OPC_Data[2];
+OPCdata = OPC_Data[4]&0x7F;  // limit as rocrail ??
+OPCSub =OPC_Data[5];
 
 }
 void OPCResponse(uint8_t *SendMsg,uint8_t RXTX, uint8_t ADHI, uint8_t ADLO,uint8_t SV, uint8_t Data1, uint8_t Data2, uint8_t Data3)
@@ -255,13 +338,14 @@ void EPROM2SV(){
 
 uint16_t SensorAddress(uint8_t i){
 uint16_t Addr;
-
+ 
 Addr = SV[1+(3*i)];
 Addr= Addr*2;
 Addr= Addr + bitRead(SV[2+(3*i)],5);
-Addr=Addr+(128*(SV[2+(3*i)]&0x0F));
+Addr=Addr+(256*(SV[2+(3*i)]&0x0F));
 Addr=Addr+1; //to match rocrail numbering..
-/*#if _SERIAL_SUBS_DEBUG
+/*
+#if _SERIAL_SUBS_DEBUG
           Serial.print(F(" Sensor Address from SV:"));
           Serial.print(i);
           Serial.print(" SV[");
@@ -273,7 +357,7 @@ Addr=Addr+1; //to match rocrail numbering..
           Serial.print("] = ");
           Serial.print( SV[(1+(3*i))]);
           Serial.print("   Computes to: ");
-          Serial.println( Addr);
+          Serial.println( Addr+1);
        
      #endif  
 */
@@ -289,21 +373,25 @@ return Addr;
 
 
 
-void doPeriodicServo() {
+void doPeriodicServo() {  // attaches and detatches servos
   int ServoPositionNow;
   int Servodemand;
   int Servoattached;
   int offset;
- for (int i=1 ; i<=4; i++) {
+ for (int i=1 ; i<=8; i++) {
+  if (((SV[3*i]& 0x38) ==0x18) ||(i==8)){  // only if this port is a servo...
+ 
      SDelay[i]=SDelay[i]+1;
   if (SDelay[i] >= SloopDelay){   // only do this at intervals...
-   SDelay[i]=0;    
+                   SDelay[i]=0;    
+
+   
 switch  (i){  // we sort out which servo to operate here.. case 1= the Base Address
-  case 1:
+  case 0:
     ServoPositionNow= myservo0.read();
     offset= SDemand[i]-ServoPositionNow;
     if (abs(offset) > SV[100+(3*i)]){
-      offset= (offset*SV[100+(3*i)])/abs(offset);
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
     }
     myservo0.write(ServoPositionNow+offset);
     Servoattached= myservo0.attached();
@@ -312,11 +400,11 @@ switch  (i){  // we sort out which servo to operate here.. case 1= the Base Addr
                     ServoOffDelay[i]=1000;
             if (myservo0.attached()) { myservo0.detach();  } }
     break;
-  case 2:
+  case 1:
     ServoPositionNow= myservo1.read(); 
     offset= SDemand[i]-ServoPositionNow;
-    if (abs(offset) > SV[100+(3*i)]){
-      offset= (offset*SV[100+(3*i)])/abs(offset);
+    if (abs(offset) > (SV[100+(3*i)]+1)){
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
     }
     myservo1.write(ServoPositionNow+offset);
     Servoattached= myservo1.attached();
@@ -326,11 +414,11 @@ switch  (i){  // we sort out which servo to operate here.. case 1= the Base Addr
             if (myservo1.attached()) { myservo1.detach();  } }
 
   break;
-  case 3:
+  case 2:
     ServoPositionNow= myservo2.read(); 
     offset= SDemand[i]-ServoPositionNow;
-    if (abs(offset) > SV[100+(3*i)]){
-      offset= (offset*SV[100+(3*i)])/abs(offset);
+    if (abs(offset) > (SV[100+(3*i)]+1)){
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
     }
     myservo2.write(ServoPositionNow+offset);
     Servoattached= myservo2.attached();
@@ -340,11 +428,11 @@ switch  (i){  // we sort out which servo to operate here.. case 1= the Base Addr
             if (myservo2.attached()) { myservo2.detach();  } }
 
   break;
-    case 4:
+    case 3:
     ServoPositionNow= myservo3.read(); 
     offset= SDemand[i]-ServoPositionNow;
-    if (abs(offset) > SV[100+(3*i)]){
-      offset= (offset*SV[100+(3*i)])/abs(offset);
+    if (abs(offset) > (SV[100+(3*i)]+1)){
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
     }
     myservo3.write(ServoPositionNow+offset);
     Servoattached= myservo3.attached();
@@ -354,8 +442,98 @@ switch  (i){  // we sort out which servo to operate here.. case 1= the Base Addr
             if (myservo3.attached()) { myservo3.detach();  } }
 
   break;
-        }
-if (SloopDelay >=90){  // only send debug if updating slowly... 
+    case 4:
+    ServoPositionNow= myservo4.read(); 
+    offset= SDemand[i]-ServoPositionNow;
+    if (abs(offset) > (SV[100+(3*i)]+1)){
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
+    }
+    myservo4.write(ServoPositionNow+offset);
+    Servoattached= myservo3.attached();
+    if (abs(offset)==0){ServoOffDelay[i]++;}
+      if (ServoOffDelay[i] > OffDelay) {
+                    ServoOffDelay[i]=1000;
+            if (myservo4.attached()) { myservo4.detach();  } }
+
+  break;  
+   case 5:
+    ServoPositionNow= myservo5.read(); 
+    offset= SDemand[i]-ServoPositionNow;
+    if (abs(offset) > (SV[100+(3*i)]+1)){
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
+    }
+    myservo5.write(ServoPositionNow+offset);
+    Servoattached= myservo5.attached();
+    if (abs(offset)==0){ServoOffDelay[i]++;}
+      if (ServoOffDelay[i] > OffDelay) {
+                    ServoOffDelay[i]=1000;
+            if (myservo5.attached()) { myservo5.detach();  } }
+
+  break;    
+  case 6:
+    ServoPositionNow= myservo6.read(); 
+    offset= SDemand[i]-ServoPositionNow;
+    if (abs(offset) > (SV[100+(3*i)]+1)){
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
+    }
+    myservo6.write(ServoPositionNow+offset);
+    Servoattached= myservo6.attached();
+    if (abs(offset)==0){ServoOffDelay[i]++;}
+      if (ServoOffDelay[i] > OffDelay) {
+                    ServoOffDelay[i]=1000;
+            if (myservo6.attached()) { myservo6.detach();  } }
+
+  break;   
+  case 7:
+    ServoPositionNow= myservo7.read(); 
+    offset= SDemand[i]-ServoPositionNow;
+    if (abs(offset) > (SV[100+(3*i)]+1)){
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
+    }
+    myservo7.write(ServoPositionNow+offset);
+    Servoattached= myservo7.attached();
+    if (abs(offset)==0){ServoOffDelay[i]++;}
+      if (ServoOffDelay[i] > OffDelay) {
+                    ServoOffDelay[i]=1000;
+            if (myservo7.attached()) { myservo7.detach();  } }
+
+  break;    
+  case 8:
+   if ((SV[3*i]& 0x38) ==0x18) {  // only if this port is a servo...
+    ServoPositionNow= myservo8.read(); 
+    offset= SDemand[i]-ServoPositionNow;
+    if (abs(offset) > (SV[100+(3*i)]+1)){
+      offset= (offset*(SV[100+(3*i)]+1))/abs(offset);
+    }
+    myservo8.write(ServoPositionNow+offset);
+    Servoattached= myservo8.attached();
+    if (abs(offset)==0){ServoOffDelay[i]++;}
+       if (ServoOffDelay[i] > OffDelay) {
+                    ServoOffDelay[i]=1000;
+            if (myservo8.attached()) { myservo8.detach();  } }
+               
+   }
+   else {
+    if (LOCO==1){
+    // this is the loco throttle 
+    ServoPositionNow= myservo8.read(); 
+    SDemand[i]=Motor_Servo;
+    offset= Motor_Servo-ServoPositionNow;
+    if (abs(offset) > (CV[3]+1)){  // can be Cv's later...
+      offset= (offset*(CV[3]+1))/abs(offset);
+    }
+    if ((ServoPositionNow+offset<=180) && ((ServoPositionNow+offset) >=1)){
+      myservo8.write(ServoPositionNow+offset);    // if you play with the CV values this can go temporarily crazy...
+    }
+   // if (Motor_Servo==90){
+   //  myservo8.write(Motor_Servo);  // set mid position immediately!
+   // }
+    Servoattached= myservo8.attached();
+    }
+   }
+
+   break;      }
+if (SloopDelay >=20){  // only send debug if updating slowly... 
     #if _SERIAL_DEBUG
          Serial.println();
          Serial.print(F("Servo:"));
@@ -374,7 +552,7 @@ if (SloopDelay >=90){  // only send debug if updating slowly...
  
    }
  }
-  }
+  } }
   
 void BuildMessage(uint8_t *SendMsg,uint8_t Command, uint8_t SRC, uint8_t DSTL,uint8_t DSTH,uint8_t D1, uint8_t D2, uint8_t D3, uint8_t D4, uint8_t D5, uint8_t D6, uint8_t D7, uint8_t D8)
 {
@@ -462,4 +640,121 @@ Serial.println("in BuildEU5 message");
 }
 }
 
+   // <0xEF>,<0E>,<7C>,                     <PCMD>,<0>,   <HOPSA>,  <LOPSA>,<TRK>,    <CVH>,    <CVL>,    <DATA7>,<0>,<0>,<CHK>
+   //  BuildProgrammerResponseMessage(sendMessage,RECMsg[3], RECMsg[5],RECMsg[6],RECMsg[7],RECMSG[8],RECMsg[9],CV[CVRequest+1]);
+void  BuildProgrammerResponseMessage(uint8_t *SendMsg, uint8_t PCMD, int8_t HOPSA,uint8_t LOPSA, uint8_t TRK, uint8_t CVH, uint8_t CVL, uint8_t DATA7)
+{
+//Serial.print("in Build Programmer Response Message  DATA7=");
+//Serial.print(DATA7);
+//  Serial.print();
+//    Serial.println();
+ SendMsg[0]= 0xE7 ;  // 
+ SendMsg[1]=  0x0E;     //  Message length
+ SendMsg[2]=  0x7C;      // Arg1
+ SendMsg[3]=  PCMD;
+ SendMsg[4]=  0x00;     // PSTAT = 0 no errors...
+ SendMsg[5]=  HOPSA;     // arg3
+ SendMsg[6]=  LOPSA;    // CMD  ==readLNCV  
+ SendMsg[7]=  TRK;      // D1   
+ SendMsg[8]=  CVH ;          // D2                    
+ bitWrite (SendMsg[8],1, bitRead(DATA7,7));  // msb of data7 goes in CVH bit 1
+  SendMsg[9]=  CVL;     // D3
+ SendMsg[10]= (DATA7 &0x7F) ;        //D4
+ SendMsg[11]=  0x00;   //D5
+ SendMsg[12]=  0x00;  //D6
+ //SendMsg[13]=  (FLAGS);  // checksum
+
+  SendMsg[13]=0xFF;  //checksum
+        for(int k=0; k<13;k++){                                   //Make checksum for this  message
+        SendMsg[13] ^= SendMsg[k]; 
+}
+}
+
+
+
+void setMessageHeader(uint8_t *SendPacketSensor){
+    unsigned char k = 0;
+    SendPacketSensor[0] = 0xE4; //OPC - variable length message 
+    SendPacketSensor[1] = uiLnSendLength; //14 bytes length
+    SendPacketSensor[2] = 0x41; //report type 
+    SendPacketSensor[3] = (FullBoardAddress >> 7) & 0x7F; //ucAddrHiSen; //sensor address high
+    SendPacketSensor[4] = FullBoardAddress & 0x7F;; //ucAddrLoSen; //sensor address low 
+   
+    SendPacketSensor[uiLnSendCheckSumIdx]=0xFF;
+    for(k=0; k<5;k++){
+      SendPacketSensor[uiLnSendCheckSumIdx] ^= SendPacketSensor[k];
+    }
+}
+
+void copyUid (byte *buffIn, byte *buffOut, byte bufferSize) {
+    for (byte i = 0; i < bufferSize; i++) {
+        buffOut[i] = buffIn[i];
+    }
+    if(bufferSize < UID_LEN){
+       for (byte i = bufferSize; i < UID_LEN; i++) {
+           buffOut[i] = 0;
+       }    
+    }
+}
+
+void calcAddrBytes(uint16_t uiFull, uint8_t *uiLo, uint8_t *uiHi){
+    *uiHi = (((uiFull - 1)  >> 8) & 0x0F) + (((uiFull-1) & 1) << 5);
+    *uiLo = ((uiFull - 1) & 0xFE) / 2;  
+}
+
+/**
+ * Function used to compare two RFID UIDs
+ */
+bool compareUid(byte *buffer1, byte *buffer2, byte bufferSize) {
+    for (byte i = 0; i < bufferSize; i++) {
+       if(buffer1[i] != buffer2[i]){
+         return(false);
+       }
+    }
+  return(true);
+}
+
+void LOCOINFO(){   
+  
+  #if _SERIAL_DEBUG
+          Serial.print(F("Dirn :"));
+          if(bitRead(DIRF, 5 )){Serial.print(" Backwards"); }
+          else{Serial.print(" Forwards"); }
+                    
+          Serial.print(F(" Speed : "));
+          Serial.print(Motor_Speed);
+          Serial.print(F("   Servo : "));
+          Serial.print(Motor_Servo);
+          Serial.print(F("   Functions: "));
+          Serial.println(DIRF&0x1F);
+     #endif  
+}
+void UDPSEND (uint8_t *SendMsg, uint8_t Len,int DELAY){
+   delay(DELAY);
+              UDP.beginPacket(ipBroad, port);
+              UDP.write(SendMsg, Len);
+              UDP.endPacket(); 
+}
+
+void Show_MSG(){
+   #if _SERIAL_DEBUG      
+         Serial.println(); 
+         Serial.print(F("From:"));
+         IPAddress remote = UDP.remoteIP();
+         Serial.print(remote);
+         Serial.print(F(" Message to Addr:"));
+         Serial.print(CommandFor(recMessage));
+         Serial.print(F(" RecLen:"));
+         Serial.print(Message_Length); 
+         Serial.print(F(" 'Our' address:"));
+         Serial.print(FullBoardAddress); 
+         Serial.print(F("   Our 'Loco(Short)Addr' is:"));
+         Serial.print(MyLocoAddr); 
+         Serial.print(F("  'Loco(Long)Addr' is:"));
+         Serial.println(MyLocoLAddr); 
+         Serial.print("Full Message is:");     
+         dump_byte_array(recMessage, Message_Length);
+         Serial.println( );
+     #endif   
+}
 

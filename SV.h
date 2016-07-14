@@ -55,20 +55,24 @@ void ShowSVS(){
          Serial.print(SV[1]);
          Serial.println(" ********  ");
 
-         for (int j=0; j<=7; j++) {
-          for (int i=0;i<=4;i++){
-         Serial.print(F("CV ["));
-         Serial.print(i+(j*5));
-         Serial.print("] =");
-         Serial.print(CV[i+(j*5)]);
-         Serial.print("d  ");
-          }
-         Serial.println("   "); 
-         }
+      
         
 Serial.println("   ----------LOW SV's -------------  "); 
-
- for (int j=0; j<=5; j++) {
+ Serial.print(F("SV [0]"));
+ Serial.print(SV[0]);
+ Serial.print("d  ");
+  Serial.print(F("SV [1]"));
+ Serial.print(SV[1]);
+ Serial.print("d  ");
+  Serial.print(F("SV [2]"));
+ Serial.print(SV[2]);
+ Serial.print("d  ");  
+  Serial.print(F("SV [3]"));
+ Serial.print(SV[3]);
+ Serial.println("d  ");  
+     
+         Serial.println("  ------Switch settings and addresses----------- "); 
+ for (int j=1; j<=16; j++) {
           for (int i=1;i<=3;i++){
          Serial.print(F("SV ["));
          Serial.print(i+(j*3));
@@ -79,7 +83,7 @@ Serial.println("   ----------LOW SV's -------------  ");
          Serial.println("   "); 
          }
 Serial.println("   ---------SERVO settings --------------  "); 
-for (int i=1; i<=4; i++) {
+for (int i=1; i<=8; i++) {
 
          Serial.print(F("SV :"));
          Serial.print(98+(3*i));
@@ -97,6 +101,17 @@ for (int i=1; i<=4; i++) {
          Serial.print(SV[100+(3*i)]);
          Serial.println("   ");
 }
+Serial.println("   ---------CV settings --------------  "); 
+   for (int j=0; j<=7; j++) {
+          for (int i=0;i<=4;i++){
+         Serial.print(F("CV ["));
+         Serial.print(i+(j*5));
+         Serial.print("] =");
+         Serial.print(CV[i+(j*5)]);
+         Serial.print("d  ");
+          }
+         Serial.println("   "); 
+         }
 #endif  
 Serial.println("   -----------------------  "); 
 
