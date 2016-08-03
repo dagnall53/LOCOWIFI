@@ -96,7 +96,7 @@ Servo myservo10;  // create servo object to control a servo
 int CRD_SENSOR ;
 
 uint8_t Motor_Speed =0 ;
-uint8_t Motor_Servo =0 ;
+uint8_t Loco_motor_servo_demand =0 ;
 
 uint8_t DIRF =0 ;
 uint8_t SND =0 ;
@@ -119,8 +119,9 @@ boolean LOCO  = 1; // for LOCO use
 
 int RFIDSTATE ;
 boolean  Data_Updated;
-int EEprom_Counter; 
-
+uint32_t EEprom_Counter; 
+uint32_t Ten_Sec;
+uint32_t MSTimer;
 //describe the subroutines..
 
  

@@ -2,7 +2,7 @@
 #include <SPI.h>
 #include <MFRC522.h> 
 
-#define SS_PIN         D1           // Configurable, see typical pin layout above
+//#define SS_PIN         D1           // Configurable, see typical pin layout above
 
   
 #include <ESP8266WiFi.h>
@@ -19,7 +19,8 @@ String wifiSSID = SSID_RR;
 String wifiPassword = PASS_RR;  
 int wifiaddr;
 
-WiFiUDP UDP;
+WiFiUDP UDP;  
+WiFiUDP UDP2;
 IPAddress ipBroad; 
 const int port = 1235;
 
@@ -41,6 +42,7 @@ boolean Phase = 0 ;
 #include "Motor.h"; 
 #include "RFID_Subs.h";
 void setup() {
+  Ten_Sec= 10000;
  LOCO = 1;
   Serial.begin(115200);
   Serial.print(F("Initialising. Trying to connect to:"));
@@ -67,7 +69,7 @@ void setup() {
 
 
         Data_Updated= false; 
-        EEprom_Counter = 0;
+        EEprom_Counter = millis();
     EEPROM.begin(512);
       //SetDefaultSVs();
       // WriteSV2EPROM();   ///  comment out later....use if needed to reset eprom
@@ -78,7 +80,7 @@ void setup() {
       SetDefaultSVs();
       WriteSV2EPROM(); 
        Data_Updated= true; 
-       EEprom_Counter=0;
+       EEprom_Counter=millis();
       //EEPROM.commit();
       delay(100);
    } //if
@@ -120,7 +122,7 @@ void setup() {
   Serial.println(SV[2]);
   Serial.print(" Servos ");
    for ( int i=1;i<=8;i++) {
-    if (((SV[3*i]& 0x38) ==0x18)){
+    if ((((SV[3*i]& 0x88) ==0x88))){   //OUTPUT TYPE == SERVO
     Serial.print(" D"); 
     Serial.print(i);
     Serial.print(":=");
@@ -165,168 +167,79 @@ void setup() {
 if ( LOCO == 1 ) {
   Serial.println("......... Setting Loco defaults");
    Motor_Speed=0;
-   Motor_Servo=90;
+   Loco_motor_servo_demand=90;
    myservo8.attach(D8);
-   myservo8.write(Motor_Servo);
+   myservo8.write(Loco_motor_servo_demand);
    ServoOffDelay[8]=1;
    SDelay[8]= 1000;
 }
 LoopCount = 0;
 
 SensorOutput_Inactive = true;
-
+  MSTimer=millis();
 }  /// end of setup ///////
 
 
 
 
 void loop() {
-  uint8_t recLen = UDP.parsePacket();
-
-
+//  Serial.println(millis()-MSTimer);   
+  MSTimer=millis();
+    digitalWrite (BlueLed ,HIGH) ;  ///   turn OFF
+    FullBoardAddress=AddrFull(SV[2],SV[1]);
+    MyLocoLAddr=CV[18]+((CV[17]&0x3F)*256);
+    MyLocoAddr=CV[1];/// 
+    LoopCount=LoopCount+1;
+    delay(2);  // add a small delay
+  // commit the writes to the  Eprom?
    if (Data_Updated) {
-      EEprom_Counter=EEprom_Counter+1;
-      if (EEprom_Counter >=1000) {
+        if (millis()>= (EEprom_Counter +Ten_Sec)){
         Data_Updated=false;
         Serial.println("Commiting EEPROM");
         EEPROM.commit();
         }
-      }
-//connect wifi if not connected
+                      }
+  //re connect wifi if not connected
     while (WiFi.status() != WL_CONNECTED) {
     delay(10);
     Serial.print("~");
     WiFi.mode(WIFI_STA);
     WiFi.begin(wifiSSID.c_str(), wifiPassword.c_str());
-    }
-    digitalWrite (BlueLed ,HIGH) ;  ///   turn OFF
-    MyLocoLAddr=CV[18]+((CV[17]&0x3F)*256);
-    MyLocoAddr=CV[1];/// 
-    LoopCount=LoopCount+1;
-    delay(2);  // add a small delay
-    FullBoardAddress=AddrFull(SV[2],SV[1]);
-  
-    Message_Length= recLen;  // test to try to avoid calling parsepacket multiple times inside loop..
+                                          }
 
-  if(Message_Length!=0){    // Check if a rocrail client has connected
-          digitalWrite (BlueLed, LOW) ;  /// turn On 
-          UDP.read(recMessage, Message_Length);
-         // UDP.flush();
-       
-        // show all messages for debug
-        Show_MSG();
-        if (recMessage[0] == OPC_SW_REQ){//+++++++++++servo setting ++++++++++++++++++++++++++++++
-            // ********** Look for set messages for my servo addresses  
-            for (int i=1; i<=8;i++){
-               if ((CommandFor(recMessage)== SensorAddress(i))&& ((SV[3*i]& 0x38) ==0x18)) { //if its a ", Sensor Request", its a SERVO driver
-                  #if _SERIAL_DEBUG
-                         Serial.print(F("Set Servo: "));
-                  #endif   
-                  SetServo(i ,CommandData(recMessage, Message_Length));   
-             }    }    }  ////****** end of if (CommandOpCode  = OPC_SW_REQ)
-             //+++++++++++++++++++++++++++++++servo setting +++++++++++++++++++++++++++++++++++++++++++++++++++
-       if (recMessage[0]== OPC_PEER_XFER){
-        if (((CommandFor(recMessage)== FullBoardAddress)  ||(recMessage[3]== 0))){  // my address or broadcast        
-            OPCPeerRX(recMessage);
-            if(recMessage[3]== 0){
-                 delay(wifiaddr*20);
-               }
-          OPCSRCL = recMessage[3];
-          //OPCRXTX= OPC_Data[1]; // OPCSV= OPC_Data[2];  // OPCSub =OPC_Data[5];
-         
-          OPCdata = OPC_Data[4];    //&0x7F; ?? // limit as rocrail ??
-        
-          #if _SERIAL_DEBUG
-              Serial.print(" Peer xfr :");
-              Serial.print(" SV[");
-              Serial.print( OPC_Data[2]);
-          #endif  
-          if (OPC_Data[1]==CMD_READ) {  // This is a Request for data 
-              OPCResponse(sendMessage,OPC_Data[1],SV[2],SV[1],OPC_Data[2],SV[OPC_Data[2]],SV[OPC_Data[2]+1],SV[OPC_Data[2]+2]);       
-            #if _SERIAL_DEBUG
-               Serial.print("] Read");
-               Serial.print(" Response :"); 
-               Serial.print(" SV[");
-               Serial.print( OPC_Data[2]);          
-               Serial.print("]=");
-               Serial.print(SV[OPC_Data[2]]); 
-               Serial.println(" ");
-           #endif 
-             UDPSEND(sendMessage,16,1000);
-                                }  
-         if (OPC_Data[1]==CMD_WRITE) {  // This is a Write data message
-              SV[OPC_Data[2]]=OPCdata;      
-              WriteSV2EPROM(); 
-              Data_Updated= true;
-              EEprom_Counter=0;
-              //EEPROM.commit();
-              OPCResponse(sendMessage,OPC_Data[1],SV[2],SV[1],OPC_Data[2],SV[OPC_Data[2]],SV[OPC_Data[2]+1],SV[OPC_Data[2]+2]);
-              
-          #if _SERIAL_DEBUG 
-             Serial.print("] Write ");
-             Serial.print("  data =");
-             Serial.print(OPCdata) ; 
-             Serial.print("d   (");
-             dump_byte(OPCdata);
-             Serial.print("H ");
-             Serial.print("  written and Responded   :"); 
-             Serial.print(" SV[");
-             Serial.print( OPC_Data[2]);          
-             Serial.print("]   =");
-             Serial.print(SV[OPC_Data[2]]); 
-             Serial.print("   MSG= :");
-             dump_byte_array(sendMessage, 16);  
-             Serial.println("");
-             #endif 
-          UDPSEND(sendMessage,16,1000);  //delay  before sending?
-                         }
-          }
-//+++++++++++++++++++++++++++++++++++++++++++++++++ opc peer xfer++++++++++++
-}  //recMessage[0]== OPC_PEER_XFER
-  motorcommands(recMessage); 
-  }
- 
-  // ++++++++++++++++++++++++++++++++++++++++++++++++end if Message_Length
-  else{ //if not receiving, do other things...
-  doPeriodicServo();
-  ReadInputPorts();
- 
- for (int i=1 ; i<8; i++) { 
-  // make this  range 1 to 8 (1=port D1)  later when we can sort an automatic port i/o setup section routine 
     
-  if ((SV[(3*i)]& 0x38) == 0x00)    {   // only do this if this port is a "Switch Report" SV3 .. bits 4 5 are 0 =Switch and Request (bit 3) is also 0 
-      if (Debounce(i) == i) {
-          lastButtonState[i] = buttonState[i];
-          DebounceTime[i] =0 ;
+    UDPFetch(recMessage); //have we recieved data??
+  
+
+  doPeriodicServo();
           
+         switch (Message_Length){
+          case 0: {  // no rx data to work with 
+           ReadInputPorts();//if not receiving, do other things...
+ // Check for port changes +++++++++++++++++++++++++++++++++++++
+            for (int i=1 ; i<8; i++) {  // range 1 to 8 (1=port D1)  so later we can sort an automatic port i/o setup section routine
+            if ((SV[(3*i)]& 0x38) == 0x00)    {   // only do this if this port is a "Switch Report" SV3 .. bits 4 5 are 0 =Switch and Request (bit 3) is also 0 
+               if (Debounce(i) == i) {
+                 lastButtonState[i] = buttonState[i];
+                 DebounceTime[i] =0 ;
+            #if _SERIAL_DEBUG
           Serial.print ("Change on IO port : ");
-          Serial.print(i);
-          Serial.print(" state");
+          Serial.print(i); 
+          Serial.print ("  >Sensor Address:");
+          Serial.print(SensorAddress(i));  
+          Serial.print(" State");
           Serial.print(buttonState[i]);
-          Serial.print (" Config (sv[");
+          Serial.print (" Config (SV[");
           Serial.print(((3*i))); 
           Serial.print ("]) = ");
-          Serial.print(SV[((3*i))]);
-          Serial.print ("  Sensor Address:(");
-          Serial.print(SensorAddress(i));
-          setOPCMsg(UDPSendPacket, SensorAddress(i)-1, buttonState[i]);   //setOPCMsg (uint8_t *SendMsg, int i, uint16_t addr, int InputState )
-          Serial.print(")  ");
-           dump_byte_array(UDPSendPacket,4);
-          Serial.println(); 
+          Serial.println(SV[((3*i))]);
          
-            UDP.beginPacket(ipBroad, port);
-            UDP.write(UDPSendPacket,4);
-            UDP.endPacket();
-            //delay(CV[100]);
-            //UDP.beginPacket(ipBroad, port);
-            //UDP.write(UDPSendPacket,4);
-            //UDP.endPacket();
-           }
-      }
- }
+          #endif  
+          setOPCMsg(UDPSendPacket, SensorAddress(i)-1, buttonState[i]);   //setOPCMsg (uint8_t *SendMsg, int i, uint16_t addr, int InputState )
+         // Serial.print(")  ");//  dump_byte_array(UDPSendPacket,4);// Serial.println(); 
+          UDPSEND(UDPSendPacket,4,2); }}}
 
-
-//                +++++++++++++++++RFID Stuff 
+  //               +++++++++++++++++RFID Stuff 
  if(bReaderActive){
    
      if ( mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()){
@@ -365,10 +278,32 @@ void loop() {
           RFIDSTATE=8;       
           }
          }  
-  } //if(bReaderActive)   
-         
-  //+++++++++++++++++++ RFID STUFF+++++++++++++++++++++
-  }  
+  } //if(bReaderActive)   +++++++++++++++++++ RFID STUFF+++++++++++++++++++++
+           delay(10);  // add a small delay         
+           }   
+          break;              // end case 0
+
+          
+         case 2:
+         // will need to add emergency stop in here...
+         break;
+           case 4:
+                Len4commands(recMessage); 
+                break;
+         case 14:
+                Len14Commands(recMessage);
+                break;
+         case 16:
+                Len16Commands(recMessage);
+                break;
+         default:
+            Show_MSG();
+                break;
+  } // end switch cases
+
+
+ 
+  
 } //void loop
 
 

@@ -73,16 +73,35 @@ uint16_t AddrFull (uint8_t HI, uint8_t LO) {
 uint16_t CommandFor (uint8_t *RECMsg) {
    uint16_t Address;
    Address= 255;
-   if(RECMsg[0] == OPC_SW_REQ){ Address= ((128*(RECMsg[2]&0x0F)+RECMsg[1])+1); }
-    if(RECMsg[0] == OPC_PEER_XFER){ Address= ((128*(RECMsg[11]&0x0F)+RECMsg[3])); }
-    if(RECMsg[0] == OPC_LOCO_ADR){ Address= ( RECMsg[2]); }
-    if(RECMsg[0] == OPC_LOCO_SND){ Address= ( RECMsg[1]); }
-    if(RECMsg[0] == OPC_LOCO_DIRF){ Address= ( RECMsg[1]); }
-    if(RECMsg[0] == OPC_LOCO_SPD){ Address= ( RECMsg[1]); }
-    if(RECMsg[0] == OPC_RQ_SL_DATA){ Address= ( RECMsg[1]); }
-     if(RECMsg[0] == OPC_WR_SL_DATA){ Address= ( RECMsg[6]+(128*RECMsg[5])); }
-    
-    
+   switch (RECMsg[0]){       
+    case 0xA0: // OPC_LOCO_SND)
+       Address= ( RECMsg[1]); 
+        break;      
+    case 0xA1: // OPC_LOCO_SND)
+       Address= ( RECMsg[1]); 
+        break;    
+    case 0xA2: // OPC_LOCO_SND)
+       Address= ( RECMsg[1]); 
+        break; 
+    case 0xB0://OPC_SW_REQ) 
+       Address= ((128*(RECMsg[2]&0x0F)+RECMsg[1])+1); 
+    break;
+    case 0xBB: //OPC_RQ_SL_DATA)
+       Address= ( RECMsg[1]); 
+        break; 
+     case 0xBF: // OPC_LOCO_ADR) 
+        Address= ( (128*(RECMsg[1])+RECMsg[2])); 
+       break;
+    case 0xE5: // OPC_PEER_XFER)
+        Address= ((128*(RECMsg[11]&0x0F)+RECMsg[3])); 
+       break;
+    case 0xEF: // OPC_WR_SL_DATA)
+        Address= ( RECMsg[6]+(128*RECMsg[5])); 
+        break;
+    default:
+        Address=255;
+    break;
+   }
  return (Address);
 }
 
@@ -102,7 +121,7 @@ uint8_t CommandOpCode (uint8_t *RECMsg, uint8_t len) {
 
 void SetServo (int i, int pos){  // expects i = 1 to 8   maps back to "D1- D8" 
 
- if (((SV[3*i]& 0x38) ==0x18) ||(i==8)){  // only if this port is a servo...(case 8 has its own check  
+ if ((((SV[3*i]& 0x88) ==0x88)) ||(i==8)){  // only if this port is a servo...(case 8 has its own check  
 
 #if _SERIAL_SUBS_DEBUG
          Serial.print("Servo on address set at Port:");
@@ -126,7 +145,7 @@ switch (pos){  // evaluate request
  SDemand[i]= SV[99+(3*i)]; //servoStraight[i];
     break; 
   case 254:
-  SDemand[i]= Motor_Servo/2; // special case for loco!
+  SDemand[i]= Loco_motor_servo_demand/2; // special case for loco!
     break;
   }
 
@@ -291,15 +310,15 @@ void OPCResponse(uint8_t *SendMsg,uint8_t RXTX, uint8_t ADHI, uint8_t ADLO,uint8
  SendMsg[3]=  0x50;     // always 50 ow address byte of Locobuffer
  SendMsg[4]=  0x01;     // always 01 high address byte of Locobuffer
 
- SendMsg[6]=  RXTX;    // LOCOIO_SV_WRITE Original sent command
+ SendMsg[6]=  (RXTX &0x7F);    // LOCOIO_SV_WRITE Original sent command
  SendMsg[7]=  (SV & 0x7F);      //SV number requested
  SendMsg[8]=  0x7F ;    //// Lower 7 bits of LocoIO version
  SendMsg[9]=  0x00;     // 00
  PXCT1 = 0;
    //PXCT1 = x x x x ...then MSB of .. [9] [8] [7] [6]
     //PXCT2 = x x x x ...then MSB of .. [14] [13] [12] [11]
- bitWrite (PXCT1, 0, bitRead(SendMsg[6],7));
- bitWrite (PXCT1, 1, bitRead(SendMsg[7],7));
+ bitWrite (PXCT1, 0, bitRead(RXTX,7));
+ bitWrite (PXCT1, 1, bitRead(SV,7));
  bitWrite (PXCT1, 2, bitRead(SendMsg[8],7));
  bitWrite (PXCT1, 3, bitRead(SendMsg[9],7));
  SendMsg[5]=  PXCT1;     //// PXCT1 high order bits 
@@ -308,10 +327,10 @@ void OPCResponse(uint8_t *SendMsg,uint8_t RXTX, uint8_t ADHI, uint8_t ADLO,uint8
  SendMsg[13]=  (Data2 & 0x7F);  //data +1
  SendMsg[14]=  (Data3 & 0x7F);  // data +2 or written data if "Write"
  PXCT2 = 0;
- bitWrite (PXCT2, 0, bitRead(SendMsg[11],7));
- bitWrite (PXCT2, 1, bitRead(SendMsg[12],7));
- bitWrite (PXCT2, 2, bitRead(SendMsg[13],7));
- bitWrite (PXCT2, 3, bitRead(SendMsg[14],7));
+ bitWrite (PXCT2, 0, bitRead(ADHI,7));
+ bitWrite (PXCT2, 1, bitRead(Data1,7));
+ bitWrite (PXCT2, 2, bitRead(Data2,7));
+ bitWrite (PXCT2, 3, bitRead(Data3,7));
   SendMsg[10]=  PXCT2;    // // High order bit of requested dataMSB requested data 
 
   SendMsg[15]=0xFF;  //checksum
@@ -379,7 +398,7 @@ void doPeriodicServo() {  // attaches and detatches servos
   int Servoattached;
   int offset;
  for (int i=1 ; i<=8; i++) {
-  if (((SV[3*i]& 0x38) ==0x18) ||(i==8)){  // only if this port is a servo...
+  if ((((SV[3*i]& 0x88) ==0x88)) ||((i==8)&(LOCO==1))){  // only if this port is a servo... or i = 8 and loco
  
      SDelay[i]=SDelay[i]+1;
   if (SDelay[i] >= SloopDelay){   // only do this at intervals...
@@ -499,7 +518,24 @@ switch  (i){  // we sort out which servo to operate here.. case 1= the Base Addr
 
   break;    
   case 8:
-   if ((SV[3*i]& 0x38) ==0x18) {  // only if this port is a servo...
+    if (LOCO==1){
+    // this is the srvo for the loco throttle 
+    ServoPositionNow= myservo8.read(); 
+    SDemand[i]=Loco_motor_servo_demand;
+    offset= Loco_motor_servo_demand-ServoPositionNow;
+    if (abs(offset) > (CV[3]+1)){  // can be Cv's later...
+      offset= (offset*(CV[3]+1))/abs(offset);
+    }
+    if ((ServoPositionNow+offset<=180) && ((ServoPositionNow+offset) >=1)){
+      myservo8.write(ServoPositionNow+offset);    // if you play with the CV values this can go temporarily crazy...
+    }
+   // if (Loco_motor_servo_demand==90){
+   //  myservo8.write(Loco_motor_servo_demand);  // set mid position immediately!
+   // }
+    Servoattached= myservo8.attached();
+    }
+    else{
+       if (((SV[3*i]& 0x88) ==0x88)) {  // only if this port is a servo...
     ServoPositionNow= myservo8.read(); 
     offset= SDemand[i]-ServoPositionNow;
     if (abs(offset) > (SV[100+(3*i)]+1)){
@@ -513,24 +549,9 @@ switch  (i){  // we sort out which servo to operate here.. case 1= the Base Addr
             if (myservo8.attached()) { myservo8.detach();  } }
                
    }
-   else {
-    if (LOCO==1){
-    // this is the loco throttle 
-    ServoPositionNow= myservo8.read(); 
-    SDemand[i]=Motor_Servo;
-    offset= Motor_Servo-ServoPositionNow;
-    if (abs(offset) > (CV[3]+1)){  // can be Cv's later...
-      offset= (offset*(CV[3]+1))/abs(offset);
-    }
-    if ((ServoPositionNow+offset<=180) && ((ServoPositionNow+offset) >=1)){
-      myservo8.write(ServoPositionNow+offset);    // if you play with the CV values this can go temporarily crazy...
-    }
-   // if (Motor_Servo==90){
-   //  myservo8.write(Motor_Servo);  // set mid position immediately!
-   // }
-    Servoattached= myservo8.attached();
-    }
-   }
+      
+      }
+   
 
    break;      }
 if (SloopDelay >=20){  // only send debug if updating slowly... 
@@ -554,7 +575,7 @@ if (SloopDelay >=20){  // only send debug if updating slowly...
  }
   } }
   
-void BuildMessage(uint8_t *SendMsg,uint8_t Command, uint8_t SRC, uint8_t DSTL,uint8_t DSTH,uint8_t D1, uint8_t D2, uint8_t D3, uint8_t D4, uint8_t D5, uint8_t D6, uint8_t D7, uint8_t D8)
+  void BuildMessage(uint8_t *SendMsg,uint8_t Command, uint8_t SRC, uint8_t DSTL,uint8_t DSTH,uint8_t D1, uint8_t D2, uint8_t D3, uint8_t D4, uint8_t D5, uint8_t D6, uint8_t D7, uint8_t D8)
 {
   int k;
   uint8_t PXCT1;
@@ -714,45 +735,69 @@ bool compareUid(byte *buffer1, byte *buffer2, byte bufferSize) {
   return(true);
 }
 
-void LOCOINFO(){   
+void LocoUpdate( byte Ref){   
   
   #if _SERIAL_DEBUG
-          Serial.print(F("Dirn :"));
-          if(bitRead(DIRF, 5 )){Serial.print(" Backwards"); }
-          else{Serial.print(" Forwards"); }
-                    
-          Serial.print(F(" Speed : "));
+  Serial.print(Ref);
+  if(bitRead(CV[29],0)){            // need to account for the  cv29 bit 0....
+          if(bitRead(DIRF, 5 )){
+             Serial.print(" Backwards"); 
+             Loco_motor_servo_demand= Motor_Speed +90;}
+          else{
+             Serial.print(" Forwards"); 
+             Loco_motor_servo_demand= 90-Motor_Speed;}
+                      }
+                 else {
+    if(bitRead(DIRF, 5 )){
+            Serial.print(" Forwards"); 
+            Loco_motor_servo_demand= 90-Motor_Speed;}
+          else{
+            Serial.print(" Backwards");
+            Loco_motor_servo_demand= Motor_Speed +90; }
+                      }  
+          Serial.print(F(" @ Speed :"));
           Serial.print(Motor_Speed);
-          Serial.print(F("   Servo : "));
-          Serial.print(Motor_Servo);
-          Serial.print(F("   Functions: "));
+          Serial.print(F(" Servo :"));
+          Serial.print(Loco_motor_servo_demand);
+          Serial.print(F(" Functions: "));
           Serial.println(DIRF&0x1F);
      #endif  
 }
 void UDPSEND (uint8_t *SendMsg, uint8_t Len,int DELAY){
-   delay(DELAY);
-              UDP.beginPacket(ipBroad, port);
-              UDP.write(SendMsg, Len);
-              UDP.endPacket(); 
-}
 
+   delay(DELAY);
+   
+              UDP2.beginPacket(ipBroad, port);
+              UDP2.write(SendMsg, Len);
+              UDP2.endPacket(); 
+}
+void UDPFetch (uint8_t *recMessage){
+   uint8_t recLen = UDP.parsePacket();
+   Message_Length= recLen;  // test to try to avoid calling parsepacket multiple times inside loop..
+   if(Message_Length!=0){    // Check if a rocrail client has connected
+          digitalWrite (BlueLed, LOW) ;  /// turn On 
+          UDP.read(recMessage, Message_Length);
+          UDP.flush();
+     
+  }
+}
 void Show_MSG(){
    #if _SERIAL_DEBUG      
          Serial.println(); 
          Serial.print(F("From:"));
          IPAddress remote = UDP.remoteIP();
          Serial.print(remote);
-         Serial.print(F(" Message to Addr:"));
+         Serial.print(F(" Msg to :"));
          Serial.print(CommandFor(recMessage));
-         Serial.print(F(" RecLen:"));
+         Serial.print(F(" Len:"));
          Serial.print(Message_Length); 
-         Serial.print(F(" 'Our' address:"));
+         Serial.print(F(" This board address:"));
          Serial.print(FullBoardAddress); 
-         Serial.print(F("   Our 'Loco(Short)Addr' is:"));
+         Serial.print(F(" This Loco (Short)Addr :"));
          Serial.print(MyLocoAddr); 
-         Serial.print(F("  'Loco(Long)Addr' is:"));
+         Serial.print(F("  '(Long)Addr' is:"));
          Serial.println(MyLocoLAddr); 
-         Serial.print("Full Message is:");     
+         Serial.print(" Full Msg:");     
          dump_byte_array(recMessage, Message_Length);
          Serial.println( );
      #endif   

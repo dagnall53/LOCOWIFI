@@ -63,12 +63,12 @@ uint8_t SendMsg[4];
        addr= UID[1]+(UID[2]*256);
        addr = addr & 2047; 
      #if _SERIAL_SUBS_DEBUG
-         Serial.print("RFID loc: ");
+         Serial.print("RFID step: ");
          Serial.print (where);
                  Serial.print(" Addr:");        
                  Serial.print (addr);
-                 Serial.print (":");
-                 Serial.print(PHASE);
+                 Serial.print (" Val:");
+                 Serial.println(PHASE);
                 #endif
         if (PHASE==1) {
                    SensorOutput_Inactive = false;       
@@ -81,14 +81,14 @@ uint8_t SendMsg[4];
         }
   
        #if _SERIAL_SUBS_DEBUG
-           Serial.print(" msg ");
-           dump_byte_array(SendMsg,4);
-          Serial.println(); 
+       //    Serial.print(" msg ");
+       //    dump_byte_array(SendMsg,4);
+       //   Serial.println(); 
           #endif
-          delay(CV[100]);
-            UDP.beginPacket(ipBroad, port);
-            UDP.write(SendMsg,4);
-            UDP.endPacket();
+          UDPSEND(SendMsg,4,2);
+          //  UDP.beginPacket(ipBroad, port);
+          //  UDP.write(SendMsg,4);
+          //  UDP.endPacket();
 
                          
 }

@@ -18,22 +18,22 @@ void SetDefaultSVs(){
   SV[5]= DEFAULT_SENSOR_ADDR_HI;  //                  high ucAddrHiSen;
     
 //servo settings, Just lo, hi and velocity (not used)
- for (int i=1; i <= 4; i++){ // set servo defaults here for now
+ for (int i=1; i <= 8; i++){ // set servo defaults here for now
     SV[98+(3*i)] = 0;   //(thrown)
     SV[99+(3*i)] = 90;  //Straight)  (90 will become 180 degrees)
     SV[100+(3*i)]= 0x01; }
 //SENSOR DEFAULTS
-for (int i=1; i<=10; i++) {
-  SV[0+(3*i)] = 0x00;
+for (int i=1; i<=16; i++) {
+  SV[0+(3*i)] = 0x07;  //set all to inputs // "switch report" 
   SV[1+(3*i)] = 10+i ;
   SV[2+(3*i)]= 0x00;}
 
-//cv'S ARE IN 256 ONWARDS.
+//cv'S ARE IN eeprom 256 ONWARDS.
 
 CV[18] = 0x03;   //default = 3
 CV[17] = 192;
-CV[1]= 0x0E; 
-CV[29]= 0x20;  // N0rmal and extended addressing..  0x21 for reversed
+CV[1]= 0x03; 
+CV[29]= 0x32;  // N0rmal  addressing..  
 
 CV[8]= 0x0D; // DIY MFR code
 CV[7] = 0x01;
