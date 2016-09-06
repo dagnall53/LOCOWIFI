@@ -1,7 +1,11 @@
 # LOCOWIFI
 WIFI ESP8266 Arduino code for use with Rcorail
 
-This is experimental code that adds LOCO speed and direction to my Servo/Switch code..
+This is experimental code that controls Servos and /Switches over WIFI using Loconet UDP.
+
+The idea is that multiple ESP8266's can be used as stationary nodes and sense trains, or be used to swich signals or servos to control points. 
+
+THE CODE IS IN DEVELOPMENT......BE careful.. 
 
 This basic servo/switch software sets up four servo ports starting at address (SV[2](hi), SV[1](lo).
 These two  will be  reported as "Sub" SV[2] and  and "Low" SV[1] in the Rocrail LocoIo General tab, 
