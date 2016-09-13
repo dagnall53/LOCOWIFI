@@ -51,7 +51,7 @@ uint8_t ucSenType = 0x0F; //input
  
  //// Debug settings
 #define _SERIAL_DEBUG  1
-#define _SERIAL_SUBS_DEBUG 1
+#define _SERIAL_SUBS_DEBUG 0  
 
 
 
@@ -65,13 +65,31 @@ uint8_t OPCRXTX;
 
 
 
- //servo settings   /// need to be here so that Subroutines.h knows about them...
+
 
  //one for each port and one for each of the  switchable positions  (avoiding address 0 for the moment), 
-int SDemand[8];
-int SDelay[8];
+uint8_t NodeMcuPortD[12];
+#define BlueLed 2 // same as PIN D4!
+#define FRONTLight 0
+#define BACKLight 4
+/*NodeMcuPortD[0]=16;
+NodeMcuPortD[1]=5;
+NodeMcuPortD[2]=4;
+NodeMcuPortD[3]=0;
+NodeMcuPortD[4]=2;
+NodeMcuPortD[5]=14;
+NodeMcuPortD[6]=12;
+NodeMcuPortD[7]=13;
+NodeMcuPortD[8]=15;
+NodeMcuPortD[9]=3;
+NodeMcuPortD[10]=1;
+*/
+ //servo settings   /// need to be here so that Subroutines.h knows about them...range to 10 to allow for expansion
+int SDemand[12];
+int SDelay[12];
+uint32_t servoDelay[12];
 int SloopDelay = 2;  //100 is about 4 seconds with 50ms delay in loop
-int ServoOffDelay[8];
+int ServoOffDelay[12];
 int OffDelay = 200;  //about 6 seconds with Delay = 20ms in main loop
 
 Servo myservo0;  // create servo object to control a servo  
@@ -82,21 +100,37 @@ Servo myservo4;  // create servo object to control a servo
 Servo myservo5;  // create servo object to control a servo  
 Servo myservo6;  // create servo object to control a servo  
 Servo myservo7;  // create servo object to control a servo  
-Servo myservo8;  // create servo object to control a servo  
+Servo myservo8;  // create servo object to control loco motors
 Servo myservo9;  // create servo object to control a servo
 Servo myservo10;  // create servo object to control a servo
 
 
 
- int buttonState[8] ;
- int lastButtonState[8];
- int DebounceTime[8]  ;
- int DebounceDelay  =  6 ; //equals 60ms (6 cycles of Void loop at 10ms each)
+ int buttonState[12] ;
+ int lastButtonState[12];
+ int DebounceTime[12]  ;
+ int DebounceDelay  =  6 ; //equals 120ms (6 cycles of Void loop at 20ms each)
 
 int CRD_SENSOR ;
 
 uint8_t Motor_Speed =0 ;
+uint8_t SPEED =0 ;
 uint8_t Loco_motor_servo_demand =0 ;
+uint32_t locoA0time;
+uint32_t locoA1time;
+uint32_t locoA2time;
+  uint32_t uiStartTime;
+ uint32_t uiActTime;
+ uint32_t WaitUntill;
+byte locosum;
+boolean WiFiDebug;
+
+uint32_t LoopTimer;
+uint32_t LocoCycle;
+bool A0rx;
+bool A1rx;
+bool A2rx;
+bool A3rx;
 
 uint8_t DIRF =0 ;
 uint8_t SND =0 ;
@@ -106,7 +140,9 @@ uint8_t MyLocoAddr ;
 
   uint8_t recMessage[128]; 
   uint8_t sendMessage[128]; 
-byte OPC_Data[10];
+  uint8_t DebugMessage[128];
+  uint8_t LenDebugMessage;
+byte OPC_Data[12];
 uint8_t Message_Length;
 
 uint8_t uiLnSendLength = 14; //14 bytes
@@ -114,15 +150,18 @@ uint8_t uiLnSendCheckSumIdx = 13; //last byte is CHK_SUMM
 #define UID_LEN         7
 
 boolean DealtWith  ;
-
-boolean LOCO  = 1; // for LOCO use
+boolean POWERON;
+boolean LOCO ;
+boolean Phase;
 
 int RFIDSTATE ;
+uint32_t RFIDCycle;
+uint8_t RFIDDots;
 boolean  Data_Updated;
-uint32_t EEprom_Counter; 
+uint32_t EPROM_Write_Delay; 
 uint32_t Ten_Sec;
 uint32_t MSTimer;
 //describe the subroutines..
 
- 
+
 

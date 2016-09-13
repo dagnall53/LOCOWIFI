@@ -30,13 +30,27 @@ for (int i=1; i<=16; i++) {
 
 //cv'S ARE IN eeprom 256 ONWARDS.
 
+    #if _LOCO
+  SV[3*8]=0x88;    // servo on 8
+
+    #endif 
+
 CV[18] = 0x03;   //default = 3
 CV[17] = 192;
 CV[1]= 0x03; 
+CV[3]= 0x03;   // default acc/decc
 CV[29]= 0x32;  // N0rmal  addressing..  
 
+CV[5]=170;   // default servo settings for + 100
+CV[2]=95;    // default servo settings for + lowest speed
+CV[6]=85;   // default servo settings for - 100
+CV[9]=10;   // default servo settings for -ve lowest speed
+
+
+
+
 CV[8]= 0x0D; // DIY MFR code
-CV[7] = 0x01;
+CV[7] = 0x02; //ver 
  #if _SERIAL_SUBS_DEBUG
          Serial.print(F("********* Default settings reinstated ***********"));
          Serial.println("   "); 

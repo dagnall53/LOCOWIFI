@@ -24,20 +24,7 @@ void setOPC_SL_RD_DATA_Msg (uint8_t *SendMsg, uint8_t SLOT, uint8_t STAT, uint8_
                          }
 }
 
-void setOPC_LONG_ACK_Msg (uint8_t *SendMsg, uint8_t LOPC, uint8_t ACK1 )  
-          {
-  unsigned char k = 0;
-  uint16_t tempaddr; 
-   SendMsg[0] = 0xB4 ; //Long Ack
-    SendMsg[1] = LOPC;  // count
-     SendMsg[2] = ACK1; 
-        SendMsg[3]=0xFF;
-        for(k=0; k<3;k++){                                   //Make checksum for this three byte message
-        SendMsg[3] ^= SendMsg[k];
-                         }
-}
-
-void SL_RD_Data ( uint8_t *sendMessage)   {
+void SL_RD_Data ( uint8_t *SendMsg)   {
 
 
     #if _SERIAL_DEBUG 
@@ -54,8 +41,8 @@ DIRF  loco direction and functions(4) 0,0,DIR,F0,F4,F3,F2,F1
     setOPC_SL_RD_DATA_Msg (sendMessage, SLOT,        STAT1, ADR,       SPD,       DIRF,    TRK,  SS2,   ADR2,  SND,  ID1,  ID2)  
  */   
 
-    setOPC_SL_RD_DATA_Msg (sendMessage, MyLocoAddr,  0x03, MyLocoAddr, Motor_Speed,  DIRF, 0x03,  0x01, 0x00,  SND,  0x00,  0x00)  ;          
-    UDPSEND(sendMessage,14,2);  // 2ms delay!
+    setOPC_SL_RD_DATA_Msg (SendMsg, MyLocoAddr,  0x03, MyLocoAddr, Motor_Speed,  DIRF, 0x03,  0x01, 0x00,  SND,  0x00,  0x00)  ;          
+    UDPSEND(SendMsg,14,2);  // 2ms delay!
 
 
 }
@@ -67,27 +54,103 @@ void Len4commands (uint8_t *RECMsg) {
 
  switch (RECMsg[0]){
     case  0xA0:    //OPC_LOCO_SPD  //loco speed.. ++++++++++++++++++++++++++++++++++++
-          if ((CommandFor(RECMsg)== MyLocoAddr) ){       
-                     digitalWrite (BlueLed, LOW) ;  /// turn On        
-                     Motor_Speed= (RECMsg[2]*90)/127;            
-                     LocoUpdate(0);              }  // //****** end of if (CommandOpCode  = OPC_LOCO_SPD)
-    break;
-   case  0xA1:    //OPC_LOCO_DIRF== OPC_LOCO_DIRF){  //loco DIRF.. ++++++++++++++++++++++++++++++++++++
+          if ((CommandFor(RECMsg)== MyLocoAddr) ){  
+                     digitalWrite (BlueLed, LOW) ;  /// turn On 
+                     SPEED=RECMsg[2];  
+              if ((CV[20]&0x40)==0x40) {
+                DebugMessage[LenDebugMessage]=0x00;
+              LenDebugMessage=LenDebugMessage+1;
+              WiFiDebug=true;   }
+                     #if _SERIAL_DEBUG  
+                     Serial.println("");
+                     Serial.print("A0 ");
+                         RFIDDots=0;
+                     #endif 
+                   //---------------------------------------------------------------
+                    Motor_Speed= SPEED; //Rocrail range is 0-127
+                    //---------Direction Lights and Servo settings---------------
+                    if(bitRead(CV[29],0)){            // need to account for the  cv29 bit 0....
+                        if(bitRead(DIRF, 5 )){
+                            Loco_motor_servo_demand= (CV[2]+ (Motor_Speed*(CV[5]-CV[2]))/(127));}
+                              else{
+                              Loco_motor_servo_demand= (CV[6]- (Motor_Speed*(CV[6]-CV[9]))/(127)) ;}
+                      }
+                      else {
+                            if(bitRead(DIRF, 5 )){
+                              Loco_motor_servo_demand=  (CV[2]+ (Motor_Speed*(CV[5]-CV[2]))/(127));}
+                              else{
+                              Loco_motor_servo_demand= (CV[6]- (Motor_Speed*(CV[6]-CV[9]))/(127)) ;}  
+                          }
+//---------------------------------------------------------------
+
+                     WaitUntill=millis()+40; 
+
+                     
+                     if ((Motor_Speed == 00)||(Motor_Speed==0x01)) { Loco_motor_servo_demand=90;} 
+                     if (RECMsg[2]==0x01){ myservo8.write(90);    }// EMERGENCY STOP // set mid position immediately!}
+                     }   
+                     break;
+
+                     
+   case  0xA1:    //OPC_LOCO_DIRF== OPC_LOCO_DIRF){  //loco DIRF and fn  function 0-4 state.. ++++++++++++++++++++++++++++++++++++
         if ((CommandFor(RECMsg)== MyLocoAddr) ){   
                     digitalWrite (BlueLed, LOW) ;  /// turn On 
-                    DIRF=RECMsg[2];      
-                    LocoUpdate(1);              }              
-     // IF "LOCO" the code will drive servo 8, (in do periodicupdate   motorspeed  set SV's for 8 to Servo, but address to ??
-     // will need to set motorspeed change as acc and dec CV functions and vary motor speed by loco cvs...
-     break;
+                    DIRF=RECMsg[2]; 
+               if ((CV[20]&0x40)==0x40) {DebugMessage[LenDebugMessage]=0x01;
+               LenDebugMessage=LenDebugMessage+1;
+               WiFiDebug=true;}
+                    #if _SERIAL_DEBUG  
+                          Serial.print("A1 ");
+                      RFIDDots=0;
+                   #endif 
+               if  (!(bitRead(DIRF,4))){ digitalWrite (FRONTLight,1); 
+                                         digitalWrite (BACKLight,1);}
+                   
+          //---------------------------------------------------------------
+                    Motor_Speed= SPEED; //try to make Motor Speed equal to what Rocrail shows
+                    //---------Direction Lights and Servo settings---------------
+                    if(bitRead(CV[29],0)){            // need to account for the  cv29 bit 0....
+                        if(bitRead(DIRF, 5 )){
+                            Loco_motor_servo_demand= (CV[2]+ (Motor_Speed*(CV[5]-CV[2]))/(127));
+                             if  (bitRead(DIRF,4)){ digitalWrite (FRONTLight,0); 
+                                                    digitalWrite (BACKLight,1);}}
+                              else{
+                              Loco_motor_servo_demand= (CV[6]- (Motor_Speed*(CV[6]-CV[9]))/(127)) ;
+                             if  (bitRead(DIRF,4)){  digitalWrite (BACKLight,0);
+                                                    digitalWrite (FRONTLight,1);}}
+                      }
+                      else {
+                            if(!bitRead(DIRF, 5 )){
+                              Loco_motor_servo_demand=  (CV[2]+ (Motor_Speed*(CV[5]-CV[2]))/(127));
+                            if  (bitRead(DIRF,4)){  digitalWrite (BACKLight,0);
+                                                    digitalWrite (FRONTLight,1);}}
+                              else{
+                              Loco_motor_servo_demand= (CV[6]- (Motor_Speed*(CV[6]-CV[9]))/(127)) ;
+                            if  (bitRead(DIRF,4)){ digitalWrite (FRONTLight,0); 
+                                                   digitalWrite (BACKLight,1);}}  
+                          }
+//---------------------------------------------------------------
+                    if ((Motor_Speed == 00)||(Motor_Speed==0x01)) { Loco_motor_servo_demand=90;} 
+                    WaitUntill=millis()+40;     
+
+                    }              
+        break;
    case  0xA2:    //OPC_LOCO_SND   //loco snd.. ++++++++++++++++++++++++++++++++++++
         if ((CommandFor(RECMsg)== MyLocoAddr) ){ 
                      digitalWrite (BlueLed, LOW) ;  /// turn On 
-                     SND= RECMsg[2];  
-                       LocoUpdate(2);            }     
-    break;
+                     SND= RECMsg[2];    
+              if ((CV[20]&0x40)==0x40) {DebugMessage[LenDebugMessage]=0x02;
+              LenDebugMessage=LenDebugMessage+1;
+              WiFiDebug=true;}
+                     #if _SERIAL_DEBUG  
+                         Serial.print("A2 ");
+                      RFIDDots=0;
+                     #endif      
+                     WaitUntill=millis()+40;
+                      }     
+       break;
  
-   case  0xB0:    //OPC SW REQ B0 {//+++++++++++servo setting ++++++++++++++++++++++++++++++
+   case  0xB0:    //OPC SW REQ B0 {//+++++++++++servo and output setting ++++++++++++++++++++++++++++++
             // ********** Look for set messages for my servo addresses  
             for (int i=1; i<=8;i++){
                if ((CommandFor(recMessage)== SensorAddress(i))&& (((SV[3*i]& 0x88) ==0x88))) { //if its a ", Sensor Request", its a SERVO driver
@@ -95,7 +158,20 @@ void Len4commands (uint8_t *RECMsg) {
                          Serial.print(F("Set Servo: "));
                   #endif   
                   SetServo(i ,CommandData(recMessage, Message_Length));   
-             }    }   // ..CommandOpCode  = OPC_SW_REQ)                    
+                   }    
+              if ((CommandFor(recMessage)== SensorAddress(i))&& (((SV[3*i]& 0x88) ==0x80))) { //it an output command
+                  #if _SERIAL_DEBUG
+                         Serial.print(F("Set Output: "));
+                         Serial.print(i);
+                         Serial.print(" to :");
+                         Serial.println(CommandData(recMessage, Message_Length));
+                  #endif   
+                  digitalWrite (NodeMcuPortD[i],CommandData(recMessage, Message_Length)); 
+                  }
+             
+             
+             
+             }   // ..CommandOpCode  = OPC_SW_REQ)                    
      
     break;
     case 0xB2:
@@ -108,7 +184,8 @@ void Len4commands (uint8_t *RECMsg) {
     break;
    case  0xBA:    //OPC_MOVE_Slots                      //move slots.. ++++++++++++++++++++++++++++++++++++
          if ((CommandFor(RECMsg)== MyLocoAddr) ) {    // ********** Look for messages in my range  
-            digitalWrite (BlueLed, LOW) ;  /// turn On   
+            digitalWrite (BlueLed, LOW) ;  /// turn On                        locoA0time=millis();
+        WaitUntill=millis()+50;
         #if _SERIAL_DEBUG
           Serial.println(F(" OPC_MOVE_SLOTS Message")) ;     
         #endif  
@@ -130,14 +207,14 @@ void Len4commands (uint8_t *RECMsg) {
           #if _SERIAL_DEBUG
                    Serial.print(F("OPC_LOCO_ADR for me:"));
           #endif  
-           digitalWrite (BlueLed, LOW) ;  /// turn On 
+           digitalWrite (BlueLed, LOW) ;  /// turn On                      locoA0time=millis();
+           WaitUntill=millis()+50;
            SL_RD_Data(sendMessage);  // deals with message, updates MyLocoAddr
            #if _SERIAL_DEBUG
                  Serial.println(F(" Sending.."));
                  //dump_byte_array(sendMessage, 14);  
            #endif
-                          }
-    break;
+                          }    break;
 }   //end of case statements
 } // end len4 commands
 
@@ -145,8 +222,10 @@ void Len14Commands (uint8_t *RECMsg) {
    uint16_t CVRequest;
    uint8_t CV_Data;
 if ((RECMsg[0] == OPC_WR_SL_DATA)&(RECMsg[2]==0x7C)){ //"Write PT slot data"   read write cv data.  
-  if ((CommandFor(RECMsg)== MyLocoAddr)||(CommandFor(RECMsg)== MyLocoLAddr)||(CommandFor(RECMsg)== 0)) {  // ?? Full check of possibilities? May need to add a CV29  bit to select L and S addr messages..
+ //if ((CommandFor(RECMsg)== MyLocoAddr)||(CommandFor(RECMsg)== MyLocoLAddr)||(CommandFor(RECMsg)== 0)) {  // ?? Full check of possibilities? May need to add a CV29  bit to select L and S addr messages..
+                 if ((CommandFor(RECMsg)== MyLocoAddr)||(CommandFor(RECMsg)== 0)) {  // Just short addres
                     digitalWrite (BlueLed, LOW) ;  /// turn On 
+                     WaitUntill=millis()+1000;
                     CVRequest=(RECMsg[9]&0x7F)+(128*bitRead(RECMsg[8],0))+(256*bitRead(RECMsg[8],4))+(512*bitRead(RECMsg[8],5));
                     CV_Data=(RECMsg[10]&0x7F)+(128*bitRead(RECMsg[8],1));
                    //REQUEST CV  DATA+++++++++++++++++++++
@@ -163,7 +242,7 @@ if ((RECMsg[0] == OPC_WR_SL_DATA)&(RECMsg[2]==0x7C)){ //"Write PT slot data"   r
           Serial.print(F("]  ="));
           Serial.print(CV[CVRequest+1]);
      #endif  
-            setOPC_LONG_ACK_Msg (sendMessage, 0x7F,  0x01)  ; // Task accepted , will send <E7> (Slot data response.)reply at completion
+            setOPC_LONG_ACK_Msg (sendMessage,RECMsg[0],  0x01)  ; // Task accepted , will send <E7> (Slot data response.)reply at completion
  #if _SERIAL_DEBUG
           Serial.println(F(" Sending OPC_LONG_ACK_Msg line 168 "));
      #endif   
@@ -200,12 +279,12 @@ if ((RECMsg[0] == OPC_WR_SL_DATA)&(RECMsg[2]==0x7C)){ //"Write PT slot data"   r
                     }
           WriteSV2EPROM();  // update EEPROM
            Data_Updated= true; 
-           EEprom_Counter=millis();
+           EPROM_Write_Delay=millis()+Ten_Sec;
           //EEPROM.commit();  // done on timer now
           EPROM2SV();  // update the SV table
-          setOPC_LONG_ACK_Msg (sendMessage, 0x6F,  0x01)  ; // acknowledge
+          setOPC_LONG_ACK_Msg (sendMessage, RECMsg[0],  0x01)  ; // acknowledge
      #if _SERIAL_DEBUG
-          Serial.print(F("  Sending OPC_LONG_ACK_Msg line 208"));
+          Serial.print(F("long ack"));
           //dump_byte_array(sendMessage, 0x04);
           Serial.println();
      #endif     
@@ -219,7 +298,8 @@ if ((RECMsg[0] == OPC_WR_SL_DATA)&(RECMsg[2]==0x7C)){ //"Write PT slot data"   r
 void Len16Commands (uint8_t *RECMsg) {
   if (recMessage[0]== OPC_PEER_XFER){
         if (((CommandFor(recMessage)== FullBoardAddress)  ||(recMessage[3]== 0))){  // my address or broadcast        
-            OPCPeerRX(recMessage);
+            OPCPeerRX(recMessage); 
+            WaitUntill=millis()+1000;
             if(recMessage[3]== 0){
                  delay(wifiaddr*20);
                }
@@ -256,10 +336,11 @@ void Len16Commands (uint8_t *RECMsg) {
               SV[OPC_Data[2]]=OPCdata;      
               WriteSV2EPROM(); 
               Data_Updated= true;
-              EEprom_Counter=millis();
+              EPROM_Write_Delay=millis()+Ten_Sec;
               //EEPROM.commit();
-              OPCResponse(sendMessage,OPC_Data[1],SV[2],SV[1],OPC_Data[2],SV[OPC_Data[2]],SV[OPC_Data[2]+1],SV[OPC_Data[2]+2]);
-              
+          //    OPCResponse(sendMessage,OPC_Data[1],SV[2],SV[1],OPC_Data[2],SV[OPC_Data[2]],SV[OPC_Data[2]+1],SV[OPC_Data[2]+2]);
+               OPCResponse(sendMessage,OPC_Data[1],SV[2],SV[1],OPC_Data[2],SV[OPC_Data[2]],0x00,0x00);
+               UDPSEND(sendMessage,16,2);  //delay  before sending?
           #if _SERIAL_DEBUG 
              Serial.print("] Write ");
              Serial.print("  data =");
@@ -280,7 +361,7 @@ void Len16Commands (uint8_t *RECMsg) {
           //   dump_byte_array(sendMessage, 16);  
              Serial.println("");
              #endif 
-             UDPSEND(sendMessage,16,2);  //delay  before sending?
+
                          }
           } // my address or broadcast 
 //+++++++++++++++++++++++++++++++++++++++++++++++++ opc peer xfer++++++++++++
