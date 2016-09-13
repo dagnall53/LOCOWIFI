@@ -11,13 +11,17 @@ This is the generic code, and has been mainly tested as a mobile device
                 CODE IS IN DEVELOPMENT......BE careful.. 
 
 The Standard LOCOIO programming interface in Rocrail then sets the addresses and modes The Module address is based on the Wifi IP address, so all nodes will report a different address. 
-The basic servo/switch software sets up ports as either servos, Inuts or outputs. 
-Servos are set up as config "output and output pulse" (SV3*port number &0x88 == 0x88)
-Digital output is Output and not pulse ((SV3*port number &0x88 == 0x80) 
-and inputs are "Input" (SV3*port number &0x88 == 0x00)
- Servo "speed" is set by "V" and this and the servo end positions can be changed using the Rocrail LocoIO "servo" tab. 
- Speed "5" is fastest, 1 is slowest.
- Servos turn off after reaching their positions (plus a short additional delay) to save power. Note: The red led will turn on because D0 is used on a V2 module..) 
+The basic servo/switch software sets up ports as either servos, Inuts or outputs.
+
+	Servos are set up as config "output and output pulse" (SV3*port number &0x88 == 0x88)
+	
+	Digital output is Output and not pulse ((SV3*port number &0x88 == 0x80) 
+	
+	Inputs are "Input" (SV3*port number &0x88 == 0x00)
+    
+      	Servo "speed" is set by "V" and this and the servo end positions can be changed using the Rocrail LocoIO "servo" tab. 
+      	Speed "5" is fastest, 1 is slowest.
+   Servos turn off after reaching their positions (plus a short additional delay) to save power. Note: The red led will turn on because D0 is used on a V2 module..) 
 When a change is sensed on an input it will send a B2 Message to rocrail. (for sensors). The Addressit sends will be the one set in locoio interface.
 
 D4 is connected to the ESP8266 blue led, which is used to indicate message reception on the board or switch change detection.
